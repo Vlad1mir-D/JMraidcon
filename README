@@ -1,0 +1,11 @@
+JMraidcon, very much a work in progress.
+
+Attempts to communicate with the JMB394 SATA HW RAID controller
+to request disk and RAID volume health status, instead of having
+to run the enormous X-based HWRaidManager binary.
+
+Currently the communication is working, but using a hard-coded
+sector number, hard-coded commands and no parsing of the responses,
+but it can clearly be seen that the disks are properly identified
+from the hex/ASCII output.
+

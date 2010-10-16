@@ -1,0 +1,4 @@
+No installation yet, simply just 'make' it and execute (as a user that can write to the /dev/sd<X> device, typically root)
+
+To compile you need to have the kernel headers (specifically the SG_IO ioctl include files) present, for RHEL the package is called 'kernel-devel-<version>'
+
