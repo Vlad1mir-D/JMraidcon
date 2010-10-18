@@ -18,7 +18,7 @@
  */
 
 #include "jm_crc.h"
-#include <arpa/inet.h> // For htonl etc.
+#include <asm/byteorder.h> // __be32_to_cpu etc.
 
 // Standard CRC-32 LUT for polynomial 0x04c11db7
 const uint32_t crcLUT[256] = { \
@@ -63,7 +63,7 @@ uint32_t JM_CRC( uint32_t* theData, uint32_t numDwords ) {
 
     // One 32-bit word at a time CRC:d in NETWORK order without any reflection
     for( i = 0; i < numDwords; i++) {
-        uint32_t dw = ntohl( theData[i] );
+        uint32_t dw = __be32_to_cpu( theData[i] );
         crcRem = crcLUT[ (dw&0xff)      ^ (crcRem >> 24) ] ^ (crcRem << 8);
         crcRem = crcLUT[ ((dw>>8)&0xff) ^ (crcRem >> 24) ] ^ (crcRem << 8);
         crcRem = crcLUT[ ((dw>>16)&0xff)^ (crcRem >> 24) ] ^ (crcRem << 8);

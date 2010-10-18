@@ -26,24 +26,12 @@
 #include <string.h>
 #include "jm_crc.h"
 #include "sata_xor.h"
-#include <arpa/inet.h>
+#include <asm/byteorder.h> // For __le32_to_cpu etc
 
 #define SECTORSIZE (512)
 #define READ_CMD (0x28)
 #define WRITE_CMD (0x2a)
 #define RW_CMD_LEN (10)
-
-const uint8_t probe1[] =    { 0x25, 0x03, 0x7b, 0x19,  0x0b, 0xa8, 0x75, 0x3c,  0,0,0,0,0,0,0,0 };
-const uint8_t probe1end[] = { 0xdb, 0xa1, 0xec, 0x10,  0xd9, 0x10, 0x6d, 0x70 };
-
-const uint8_t probe2[] =    { 0x25, 0x03, 0x7b, 0x19,  0x37, 0xe3, 0x88, 0x03,  0,0,0,0,0,0,0,0 };
-const uint8_t probe2end[] = { 0xdb, 0xa1, 0xec, 0x10,  0x1e, 0x51, 0x58, 0x69 };
-
-const uint8_t probe3[] =    { 0x25, 0x03, 0x7b, 0x19,  0xf3, 0x05, 0x97, 0x68,  0,0,0,0,0,0,0,0 };
-const uint8_t probe3end[] = { 0xdb, 0xa1, 0xec, 0x10,  0x07, 0x4b, 0x23, 0xfe };
-
-const uint8_t probe4[] =    { 0x25, 0x03, 0x7b, 0x19,  0x3a, 0x52, 0x0c, 0xe0,  0,0,0,0,0,0,0,0 };
-const uint8_t probe4end[] = { 0xdb, 0xa1, 0xec, 0x10,  0xdb, 0x7a, 0xe5, 0x5b };
 
 // First 4 bytes are always the same for all the scrambled commands, next 4 bytes forms an incrementing command id
 const uint8_t probe6[]={ 0x22, 0x03, 0x7b, 0x19, 0x06,0x00,0x00,0x00, 0x00, 0x01, 0x02, 0xff, 0x01 }; // This returns very little info (at the end)?
@@ -80,8 +68,7 @@ uint32_t Do_JM_Cmd( int theFD, uint32_t* theCmd, uint32_t* theResp ) {
     uint32_t myCRC = JM_CRC( theCmd, 0x7f );
 
     // Stash the CRC at the end
-#warning FIXME: CRC in request must be little-endian, no matter what the host arch is
-    theCmd[0x7f] = myCRC;
+    theCmd[0x7f] = __cpu_to_le32( myCRC );
 //    printf("Command CRC: 0x%08x\n", myCRC);
 
     // Make the data look really 31337 (or not)
@@ -101,9 +88,8 @@ uint32_t Do_JM_Cmd( int theFD, uint32_t* theCmd, uint32_t* theResp ) {
     SATA_XOR( theResp );
 
     myCRC = JM_CRC( theResp, 0x7f);
-#warning FIXME: CRC in response is little-endian, no matter what the host arch is
-    if( myCRC != theResp[0x7f] ) {
-        printf( "Warning: Response CRC 0x%08x does not match the calculated 0x%08x!!\n", theResp[0x7f], myCRC );
+    if( myCRC != __le32_to_cpu( theResp[0x7f] ) ) {
+        printf( "Warning: Response CRC 0x%08x does not match the calculated 0x%08x!!\n", __le32_to_cpu( theResp[0x7f] ), myCRC );
         retval=1;
     }
     return retval;
@@ -189,8 +175,16 @@ int main(int argc, char * argv[])
     }
 
     // Generate and send the initial "wakeup" data
-    // I haven't gotten the CRC figured out on these ones yet
+    // No idea what the second dword represents at this point
     // Note that these (and all other writes) should be directed to an unused sector!!
+    memset( probeBuf, 0, SECTORSIZE );
+
+    // For wide access
+    uint32_t* probeBuf32 = (uint32_t*)probeBuf;
+
+    // Populate with the static data
+    probeBuf32[0 >> 2] = __cpu_to_le32( 0x197b0325 );
+    probeBuf32[0x1f8 >> 2] = __cpu_to_le32( 0x10eca1db );
     for( uint32_t i=0x10; i<0x1f8; i++ ) {
         probeBuf[i] = i&0xff;
     }
@@ -199,17 +193,25 @@ int main(int argc, char * argv[])
     rwCmdBlk[0] = WRITE_CMD;
     io_hdr.dxferp = probeBuf;
 
-    memcpy(probeBuf, probe1, 0x10);
-    memcpy(probeBuf+0x1f8, probe1end, 0x08);
+    // The only value (except the CRC at the end) that changes between the 4 wakeup sectors
+    probeBuf32[4 >> 2] = __cpu_to_le32( 0x3c75a80b );
+    uint32_t myCRC = JM_CRC( probeBuf32, 0x1fc >> 2 );
+    probeBuf32[0x1fc >> 2] = __cpu_to_le32( myCRC );
     ioctl(sg_fd, SG_IO, &io_hdr);
-    memcpy(probeBuf, probe2, 0x10);
-    memcpy(probeBuf+0x1f8, probe2end, 0x08);
+
+    probeBuf32[4 >> 2] = __cpu_to_le32( 0x0388e337 );
+    myCRC = JM_CRC( probeBuf32, 0x1fc >> 2 );
+    probeBuf32[0x1fc >> 2] = __cpu_to_le32( myCRC );
     ioctl(sg_fd, SG_IO, &io_hdr);
-    memcpy(probeBuf, probe3, 0x10);
-    memcpy(probeBuf+0x1f8, probe3end, 0x08);
+
+    probeBuf32[4 >> 2] = __cpu_to_le32( 0x689705f3 );
+    myCRC = JM_CRC( probeBuf32, 0x1fc >> 2 );
+    probeBuf32[0x1fc >> 2] = __cpu_to_le32( myCRC );
     ioctl(sg_fd, SG_IO, &io_hdr);
-    memcpy(probeBuf, probe4, 0x10);
-    memcpy(probeBuf+0x1f8, probe4end, 0x08);
+
+    probeBuf32[4 >> 2] = __cpu_to_le32( 0xe00c523a );
+    myCRC = JM_CRC( probeBuf32, 0x1fc >> 2 );
+    probeBuf32[0x1fc >> 2] = __cpu_to_le32( myCRC );
     ioctl(sg_fd, SG_IO, &io_hdr);
 
     // Initial probe complete, now send scrambled commands to the same sector
